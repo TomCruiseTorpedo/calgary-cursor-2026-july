@@ -29,9 +29,7 @@ export default function App() {
   const [transcript, setTranscript] = useState('')
   const [voiceNote, setVoiceNote] = useState('')
   const [ttsStatus, setTtsStatus] = useState<TtsStatus>('idle')
-  const [ttsDetail, setTtsDetail] = useState(
-    'Voice idle — first Speak loads Kokoro',
-  )
+  const [ttsDetail, setTtsDetail] = useState('')
   const [showDrawSettings, setShowDrawSettings] = useState(false)
   const recRef = useRef<SpeechRecognition | null>(null)
 
@@ -444,6 +442,7 @@ export default function App() {
                 className={`shift-day${inputs.skipDay === d.id ? ' skipped' : ''}${previewDay === d.id && !inputs.skipDay ? ' preview' : ''}`}
               >
                 <span className="day">{d.short}</span>
+                <span className="field-hint">hrs</span>
                 <input
                   type="number"
                   aria-label={`${d.label} hours`}
@@ -455,6 +454,7 @@ export default function App() {
                     updateShift(d.id, 'hours', Number(e.target.value) || 0)
                   }
                 />
+                <span className="field-hint">tips</span>
                 <input
                   type="number"
                   aria-label={`${d.label} tips`}
@@ -582,7 +582,7 @@ export default function App() {
 
       <p className="footer-note">
         Built with Cursor · On-device voice · Not affiliated with ZayZoon
-        {!transcript && !voiceNote ? ` · ${ttsDetail}` : ''}
+        {ttsDetail ? ` · ${ttsDetail}` : ''}
       </p>
     </div>
   )

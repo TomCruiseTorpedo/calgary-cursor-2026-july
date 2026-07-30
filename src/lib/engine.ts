@@ -378,9 +378,10 @@ export function decide(inputs: Inputs): Decision {
     fee = 0
     for (const p of coach.paths) p.recommended = p.id === 'wait'
   } else if (!inputs.skipDay && !ifSkipLane.covers) {
-    title = `Work ${skipLabel} — skip breaks rent runway`
-    summary = `Working all shifts: $${total.toFixed(0)} covers $${mustPays.toFixed(0)}. If you skip ${skipLabel}, you drop to $${ifSkip.toFixed(0)} — short $${ifSkipLane.gap.toFixed(0)} for rent+transit ($${rentTransit.toFixed(0)}) and other must-pays.`
-    speakText = `Keep ${skipLabel} on the schedule. Skipping would leave you short about ${ifSkipLane.gap.toFixed(0)} dollars before payday. Your float holds if you work it.`
+    // Calm entry: float holds now; pressure-test lives on the what-if lever.
+    title = 'Must-pays on track'
+    summary = `Nothing needs fixing right now. Working all shifts: $${total.toFixed(0)} covers $${mustPays.toFixed(0)} (rent+transit $${rentTransit.toFixed(0)}). Weakest link: skip ${skipLabel} and you are short $${ifSkipLane.gap.toFixed(0)}. Flip the lever to try it.`
+    speakText = `Your float holds. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. If you skip ${skipLabel}, you would be short about ${ifSkipLane.gap.toFixed(0)} dollars. Wait on earned wage access unless you flip that lever.`
     kind = 'wait'
     recommendedDraw = 0
     payoutPath = 'none'

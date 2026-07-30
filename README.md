@@ -39,8 +39,8 @@ Cursor end-to-end: pure decision engine, voice I/O, judge-facing README. On-devi
 ## Judge checklist
 
 1. Open the app (`npm run dev` or clone the public repo).
-2. Confirm calm entry: **Must-pays on track** · Safe tonight above $0 · Best path = Wait.
-3. Flip **Skip Thursday** on the what-if lever → runway **Short**, title breaks, Best path updates.
+2. Confirm calm entry: **Must-pays on track** · Safe tonight above $0 · Best path = Wait · weakest-link line mentions Thursday.
+3. Flip **Skip Thursday** on the what-if lever → runway **Short**, status breaks, Best path updates (gift-card on the seed).
 4. Flip lever off → float holds again; Best stays Wait (no lying badge).
 5. Open **Draw settings**, tweak Bank fee / Daily cap — coach paths recalculate.
 6. Click **Speak decision**; skim `src/lib/engine.ts`.

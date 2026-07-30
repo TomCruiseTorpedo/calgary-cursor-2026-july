@@ -275,27 +275,13 @@ input:focus {
   font-weight: 500;
 }
 
-.skip-btn {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 0.35rem 0.2rem;
+.field-hint {
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.skip-btn:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
-
-.skip-btn.active {
-  background: var(--coral-dim);
-  border-color: var(--coral);
-  color: var(--ink);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: center;
 }
 
 .bills-grid {

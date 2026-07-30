@@ -2,7 +2,7 @@
 
 ## What this is
 
-Voice-capable **decision tool** for daily earners: rent runway under a skip-day + safe-to-draw (wait / bank / gift-card). Not a money-in/out budget dashboard.
+Voice-capable **decision tool** for daily earners: what-if skip lever → rent runway compare → safe-to-draw coach (wait / bank / gift-card). Not a money-in/out budget dashboard.
 
 ## File map
 
@@ -24,9 +24,10 @@ npm run build
 
 ## Conventions
 
-- Keep the **decision card** as the primary output — do not grow a chart dashboard.
+- Keep the **decision panel** primary (chips → status → lever → runway → coach). Do not grow a chart dashboard.
+- Demo opens **calm** (skip off); pressure-test via the what-if lever.
 - Payroll sync + execute-draw are **placeholders** by design for the demo.
-- Public docs: Cursor-only attribution. No other harness names.
+- Public docs / commits: Cursor-only attribution. No other harness names, no peer-project names, no `Co-authored-by` trailers.
 - English only for voice.
 
 ## Event prompt (verbatim)
