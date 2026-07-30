@@ -1,54 +1,56 @@
 # ShiftFloat
 
-Payday is Friday. Rent hits Wednesday. You’re staring at Thursday’s shift wondering if you can take it off for a sick kid — and whether tapping earned wages tonight helps or just burns a fee.
+Payday is Friday. Rent hits mid-week. You’re staring at Thursday’s shift — sick kid, no cover — wondering if you can take it off, and whether tapping earned wages tonight helps or just burns a fee.
 
-**ShiftFloat** answers that. Not with another money-in / money-out ledger — with a side-by-side **rent runway** (work every shift vs skip a day) and a **safe-to-draw coach** that scores wait · bank · gift-card against your EWA fee and cap, spoken on-device.
+**ShiftFloat** answers that for daily earners. Not another money-in / money-out budget ledger — a **what-if skip lever**, a side-by-side **rent runway**, and a **safe-to-draw coach** (wait · bank · gift-card) spoken on-device.
 
 Built with **[Cursor](https://cursor.com)** as the agentic coding harness.
+
+> **Prompt fit:** *Build something that goes beyond the typical budget feature of money in / money out — imagine what a worker who earns daily would actually find valuable when managing their day-to-day earnings in a budgeting tool.*
 
 ## Live demo
 
 | Surface | URL |
 |---------|-----|
-| Local | `npm run dev` → http://localhost:5173 |
-| Production | _pending `vercel deploy --prod` (approve when ready)_ |
+| Repo | https://github.com/TomCruiseTorpedo/calgary-cursor-2026-july |
+| Local | `npm install && npm run dev` → http://127.0.0.1:5173 |
 
 ## How it was built
 
-Cursor end-to-end: decision engine, voice I/O, judge-facing README. On-device **Kokoro-82M** TTS (`kokoro-js`) + **Web Speech** STT (English). Payroll sync and real transfers are shaped as placeholders.
+Cursor end-to-end: pure decision engine, voice I/O, judge-facing README. On-device **Kokoro-82M** TTS (`kokoro-js`) + **Web Speech** STT. Payroll sync and real transfers are explicit placeholders — coach math is live.
 
 ## Summary for reviewers
 
 | Criterion | How this project addresses it |
 |-----------|-------------------------------|
-| **Everyday pain (daily earner)** | “If I skip Thursday, do I still cover rent + transit?” — then whether to draw EWA |
-| **Beyond money in / out** | Decision card + skip-day runway, not envelopes or category pie charts |
-| **Cursor fit** | Readable mechanism in `src/lib/engine.ts`; voice loop in `src/lib/voice*.ts` |
-| **Working demo** | Seeded QSR week; toggle Skip on Thursday; Speak decision |
-| **Quality** | Pure decision function; browser TTS fallback if Kokoro cold-start fails |
+| **Everyday pain (daily earner)** | “If I skip Thursday, do I still cover rent?” — then wait / bank / gift-card |
+| **Beyond money in / out** | What-if lever + runway lanes + scored draw paths — not envelopes or category pies |
+| **Cursor fit** | Mechanism in `src/lib/engine.ts`; voice in `src/lib/voice*.ts` |
+| **Working demo** | Seeded QSR week opens calm; flip Skip Thursday → broken runway + Best path |
+| **Quality** | Pure `decide()`; browser TTS fallback if Kokoro cold-start fails |
 
 ## What it does
 
-1. Load the seeded week (hours, tips, must-pays before payday).
-2. Toggle **Skip?** on a day — compare **work-all vs skip** rent runway (rent+transit called out).
-3. Read the **safe-to-draw coach**: three scored paths (wait / bank / gift-card); tweak EWA fee & cap live.
+1. Opens with **must-pays on track** (Safe tonight · Runway · Best path chips).
+2. Flip the **what-if lever** (pick a day → Skip) — compare work-all vs skip rent runway.
+3. Read the **safe-to-draw coach**: Wait / Bank / Gift-card; one **Best**; draw fees under *Draw settings*.
 4. **Speak to adjust** (mic) or edit fields; **Speak decision** plays Kokoro (or browser TTS).
 
 ## Judge checklist
 
-1. Open the app (local or live URL).
-2. Confirm **work vs skip** runway: skip Thursday → short; rent+transit called out.
-3. Confirm **safe-to-draw coach** scores Wait / Bank / Gift-card with one Recommended (gift-card on demo seed).
-4. Clear Thursday skip — card flips to keep-working / float-holds; skip lane still shows the gap.
-5. Tweak **Bank fee** or **Daily cap** — coach paths recalculate.
+1. Open the app (`npm run dev` or clone the public repo).
+2. Confirm calm entry: **Must-pays on track** · Safe tonight above $0 · Best path = Wait.
+3. Flip **Skip Thursday** on the what-if lever → runway **Short**, title breaks, Best path updates.
+4. Flip lever off → float holds again; Best stays Wait (no lying badge).
+5. Open **Draw settings**, tweak Bank fee / Daily cap — coach paths recalculate.
 6. Click **Speak decision**; skim `src/lib/engine.ts`.
 
 ## Architecture
 
 ```
-shifts + bills + skip day
+shifts + bills + skip lever
         ↓
-   engine.decide()  →  decision card (UI)
+   engine.decide()  →  chips · status · runway · coach (UI)
         ↓
    Kokoro / speechSynthesis  →  spoken recommendation
 ```

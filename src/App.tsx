@@ -30,15 +30,24 @@ export default function App() {
   const [voiceNote, setVoiceNote] = useState('')
   const [ttsStatus, setTtsStatus] = useState<TtsStatus>('idle')
   const [ttsDetail, setTtsDetail] = useState(
-    'Voice idle — Speak loads Kokoro on first use',
+    'Voice idle — first Speak loads Kokoro',
   )
+  const [showDrawSettings, setShowDrawSettings] = useState(false)
   const recRef = useRef<SpeechRecognition | null>(null)
 
   const decision = useMemo(() => decide(inputs), [inputs])
   const brokenSkip =
     Boolean(inputs.skipDay) && !decision.runwayCoversMustPays
+  const previewDay = inputs.previewSkipDay
   const skipLabel =
-    WEEKDAYS.find((d) => d.id === decision.runway.skipDay)?.label ?? 'day'
+    WEEKDAYS.find((d) => d.id === previewDay)?.label ?? 'Thursday'
+  const activeLane = inputs.skipDay
+    ? decision.runway.ifSkip
+    : decision.runway.workAll
+  const bestPath =
+    decision.coachPaths.find((p) => p.recommended) ?? decision.coachPaths[0]
+  const floatHealthy = decision.runway.workAll.covers && !brokenSkip
+  const skipEarnPreview = decision.skipDayEarnings
 
   function updateShift(day: Weekday, field: 'hours' | 'tips', value: number) {
     setInputs((prev) => ({
@@ -57,11 +66,19 @@ export default function App() {
     }))
   }
 
-  function toggleSkip(day: Weekday) {
+  function setPreviewDay(day: Weekday) {
     setInputs((prev) => ({
       ...prev,
-      skipDay: prev.skipDay === day ? null : day,
       previewSkipDay: day,
+      // Keep lever state; retarget which day is skipped.
+      skipDay: prev.skipDay ? day : null,
+    }))
+  }
+
+  function toggleSkipLever() {
+    setInputs((prev) => ({
+      ...prev,
+      skipDay: prev.skipDay ? null : prev.previewSkipDay,
     }))
   }
 
@@ -170,17 +187,13 @@ export default function App() {
             If I skip {skipLabel} — do I still cover rent?
           </p>
           <p className="sub">
-            Rent runway + safe-to-draw coach (wait · bank · gift-card). Voice
-            on-device.
+            Flip the what-if lever. Read the runway. Take the Best draw path —
+            or wait.
           </p>
         </div>
         <div className="top-actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setInputs(demoSeed())}
-          >
-            Reset
+          <button type="button" className="btn btn-primary" onClick={onSpeak}>
+            Speak decision
           </button>
           <button
             type="button"
@@ -189,26 +202,193 @@ export default function App() {
           >
             {listening ? 'Listening…' : 'Speak to adjust'}
           </button>
-          <button type="button" className="btn btn-primary" onClick={onSpeak}>
-            Speak decision
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={preloadTts}>
-            Preload
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setInputs(demoSeed())}
+          >
+            Reset demo
           </button>
         </div>
       </header>
 
       {(transcript || voiceNote) && (
-        <p className="voice-line">
+        <p className="voice-line" role="status">
           {transcript}
           {voiceNote ? ` · ${voiceNote}` : ''}
-          {` · TTS: ${ttsStatus}`}
+          {` · Voice: ${ttsStatus}`}
         </p>
       )}
 
       <div className="layout">
+        <section
+          className={`panel decision ${decision.kind}${brokenSkip ? ' broken' : ''}${floatHealthy && !inputs.skipDay ? ' healthy' : ''}`}
+        >
+          <div className="answer-chips" aria-label="Key answers">
+            <div className="answer-chip">
+              <span>Safe tonight</span>
+              <strong>{money(decision.safeToSpendTonight)}</strong>
+              <em>Yours after must-pays buffer</em>
+            </div>
+            <div
+              className={`answer-chip${activeLane.covers ? ' ok' : ' alert'}`}
+            >
+              <span>Runway</span>
+              <strong>
+                {activeLane.covers
+                  ? 'Covers'
+                  : `Short ${money(activeLane.gap)}`}
+              </strong>
+              <em>
+                {inputs.skipDay
+                  ? `If you skip ${skipLabel}`
+                  : 'Working every shift'}
+              </em>
+            </div>
+            <div className="answer-chip best">
+              <span>Best path</span>
+              <strong>{bestPath.label}</strong>
+              <em>
+                {bestPath.id === 'wait'
+                  ? 'No draw needed'
+                  : `${money(bestPath.draw)} after fee`}
+              </em>
+            </div>
+          </div>
+
+          <div
+            className={`status-card${floatHealthy && !inputs.skipDay ? ' ok' : brokenSkip ? ' alert' : ' warn'}`}
+            role="status"
+          >
+            {floatHealthy && !inputs.skipDay ? (
+              <>
+                <strong>Must-pays on track</strong>
+                <p>
+                  Nothing needs fixing right now. Weakest link if you skip{' '}
+                  {skipLabel}: short {money(decision.runway.ifSkip.gap)} before
+                  payday. Ranked fixes appear the moment the lever breaks the
+                  runway.
+                </p>
+              </>
+            ) : brokenSkip ? (
+              <>
+                <strong>Runway broken — take Best below</strong>
+                <p>
+                  Skipping {skipLabel} leaves rent + transit short. Coach picks{' '}
+                  {bestPath.label}.
+                </p>
+              </>
+            ) : (
+              <>
+                <strong>{decision.title}</strong>
+                <p>{decision.summary}</p>
+              </>
+            )}
+          </div>
+
+          <div className="what-if">
+            <div className="what-if-head">
+              <span className="section-label inline">What-if lever</span>
+              <span className="lever-meta">
+                {inputs.skipDay ? '1 of 1 on' : '0 of 1 on'}
+              </span>
+            </div>
+            <div className="day-picks" role="group" aria-label="Day to skip">
+              {WEEKDAYS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`day-pick${previewDay === d.id ? ' selected' : ''}${inputs.skipDay === d.id ? ' live' : ''}`}
+                  onClick={() => setPreviewDay(d.id)}
+                  aria-pressed={previewDay === d.id}
+                >
+                  {d.short}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={`lever${inputs.skipDay ? ' on' : ''}`}
+              onClick={toggleSkipLever}
+              aria-pressed={Boolean(inputs.skipDay)}
+            >
+              <span className="lever-switch" aria-hidden="true" />
+              <span className="lever-copy">
+                <strong>Skip {skipLabel}</strong>
+                <em>
+                  Drop that shift before payday · lose about{' '}
+                  {money(skipEarnPreview)}
+                  {decision.runway.ifSkip.covers
+                    ? ' · still covers must-pays'
+                    : ` · breaks runway by ${money(decision.runway.ifSkip.gap)}`}
+                </em>
+              </span>
+            </button>
+          </div>
+
+          <div className="runway-compare">
+            <div
+              className={`runway-lane${decision.runway.workAll.covers ? ' ok' : ' alert'}${!inputs.skipDay ? ' active-lane' : ''}`}
+            >
+              <span className="lane-label">Work every shift</span>
+              <strong>
+                {money(decision.runway.workAll.earned)} /{' '}
+                {money(decision.runway.workAll.mustPays)}
+              </strong>
+              <em>
+                Rent + transit {money(decision.rentTransit)} ·{' '}
+                {decision.runway.workAll.covers
+                  ? 'covers'
+                  : `short ${money(decision.runway.workAll.gap)}`}
+              </em>
+            </div>
+            <div
+              className={`runway-lane${decision.runway.ifSkip.covers ? ' ok' : ' alert'}${inputs.skipDay ? ' active-lane' : ''}`}
+            >
+              <span className="lane-label">If you skip {skipLabel}</span>
+              <strong>
+                {money(decision.runway.ifSkip.earned)} /{' '}
+                {money(decision.runway.ifSkip.mustPays)}
+              </strong>
+              <em>
+                Lose {money(decision.skipDayEarnings)} that day ·{' '}
+                {decision.runway.ifSkip.covers
+                  ? 'still covers'
+                  : `short ${money(decision.runway.ifSkip.gap)}`}
+              </em>
+            </div>
+          </div>
+
+          <div className="coach-paths">
+            {decision.coachPaths.map((p) => (
+              <div
+                key={p.id}
+                className={`coach-path${p.recommended ? ' recommended' : ''}`}
+              >
+                <div className="coach-top">
+                  <span>{p.label}</span>
+                  {p.recommended ? (
+                    <span className="rec-badge">Best</span>
+                  ) : null}
+                </div>
+                <strong>
+                  {p.id === 'wait'
+                    ? 'No draw'
+                    : `${money(p.draw)}${p.fee > 0 ? ` · fee ${money(p.fee)}` : ' · no fee'}`}
+                </strong>
+                <em className="why">{p.why}</em>
+                <span className="cushion">After {money(p.cushion)}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="placeholder-line">
+            Payroll sync + sending a draw stay mocked · coach math is live
+          </p>
+        </section>
+
         <section className="panel inputs">
-          <div className="row-meta">
+          <div className="row-meta simple">
             <label>
               Rate $/hr
               <input
@@ -240,62 +420,7 @@ export default function App() {
               />
             </label>
             <label>
-              Bank fee
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={inputs.ewa.bankFee}
-                onChange={(e) =>
-                  patchEwa('bankFee', Number(e.target.value) || 0)
-                }
-              />
-            </label>
-            <label>
-              Daily cap
-              <input
-                type="number"
-                min={0}
-                step={10}
-                value={inputs.ewa.dailyCap}
-                onChange={(e) =>
-                  patchEwa('dailyCap', Number(e.target.value) || 0)
-                }
-              />
-            </label>
-            <label>
-              Max %
-              <input
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                value={Math.round(inputs.ewa.maxFraction * 100)}
-                onChange={(e) =>
-                  patchEwa(
-                    'maxFraction',
-                    Math.min(
-                      1,
-                      Math.max(0, (Number(e.target.value) || 0) / 100),
-                    ),
-                  )
-                }
-              />
-            </label>
-            <label>
-              Gift fee
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={inputs.ewa.giftCardFee}
-                onChange={(e) =>
-                  patchEwa('giftCardFee', Number(e.target.value) || 0)
-                }
-              />
-            </label>
-            <label>
-              Drawn
+              Already drawn $
               <input
                 type="number"
                 min={0}
@@ -311,17 +436,17 @@ export default function App() {
             </label>
           </div>
 
-          <div className="section-label">Shifts · hrs / tips · skip</div>
+          <div className="section-label">This week · hours / tips</div>
           <div className="shifts-week">
             {WEEKDAYS.map((d) => (
               <div
                 key={d.id}
-                className={`shift-day${inputs.skipDay === d.id ? ' skipped' : ''}`}
+                className={`shift-day${inputs.skipDay === d.id ? ' skipped' : ''}${previewDay === d.id && !inputs.skipDay ? ' preview' : ''}`}
               >
                 <span className="day">{d.short}</span>
                 <input
                   type="number"
-                  aria-label={`${d.short} hours`}
+                  aria-label={`${d.label} hours`}
                   min={0}
                   max={24}
                   step={0.5}
@@ -332,7 +457,7 @@ export default function App() {
                 />
                 <input
                   type="number"
-                  aria-label={`${d.short} tips`}
+                  aria-label={`${d.label} tips`}
                   min={0}
                   step={1}
                   value={inputs.shifts[d.id].tips}
@@ -340,18 +465,11 @@ export default function App() {
                     updateShift(d.id, 'tips', Number(e.target.value) || 0)
                   }
                 />
-                <button
-                  type="button"
-                  className={`skip-btn${inputs.skipDay === d.id ? ' active' : ''}`}
-                  onClick={() => toggleSkip(d.id)}
-                >
-                  {inputs.skipDay === d.id ? 'Skip' : '·'}
-                </button>
               </div>
             ))}
           </div>
 
-          <div className="section-label">Must-pays · amount · due (days)</div>
+          <div className="section-label">Must-pays before payday</div>
           <div className="bills-grid">
             {inputs.bills.map((b) => (
               <div key={b.id} className="bill-chip">
@@ -360,7 +478,7 @@ export default function App() {
                   value={b.name}
                   onChange={(e) => updateBill(b.id, { name: e.target.value })}
                   className="text-input"
-                  aria-label="Bill name"
+                  aria-label={`${b.name} name`}
                 />
                 <input
                   type="number"
@@ -369,7 +487,7 @@ export default function App() {
                   onChange={(e) =>
                     updateBill(b.id, { amount: Number(e.target.value) || 0 })
                   }
-                  aria-label="Amount"
+                  aria-label={`${b.name} amount`}
                 />
                 <input
                   type="number"
@@ -380,101 +498,91 @@ export default function App() {
                       dueInDays: Number(e.target.value) || 0,
                     })
                   }
-                  aria-label="Due in days"
+                  aria-label={`${b.name} due in days`}
                 />
               </div>
             ))}
           </div>
-        </section>
 
-        <section
-          className={`panel decision ${decision.kind}${brokenSkip ? ' broken' : ''}`}
-        >
-          <div className="decision-head">
-            <div>
-              <p className="decision-kicker">Decision</p>
-              <h2>{decision.title}</h2>
-            </div>
-            <div className="metrics inline">
-              <div className="metric">
-                <span>Safe tonight</span>
-                <strong>{money(decision.safeToSpendTonight)}</strong>
-              </div>
-              <div className="metric">
-                <span>EWA avail</span>
-                <strong>{money(decision.ewaAvailable)}</strong>
-              </div>
-            </div>
-          </div>
-          <p className="summary">{decision.summary}</p>
-
-          <div className="runway-compare">
-            <div
-              className={`runway-lane${decision.runway.workAll.covers ? ' ok' : ' alert'}${!inputs.skipDay ? ' active-lane' : ''}`}
-            >
-              <span className="lane-label">Work all</span>
-              <strong>
-                {money(decision.runway.workAll.earned)} /{' '}
-                {money(decision.runway.workAll.mustPays)}
-              </strong>
-              <em>
-                R+T {money(decision.rentTransit)} ·{' '}
-                {decision.runway.workAll.covers
-                  ? 'covers'
-                  : `−${money(decision.runway.workAll.gap)}`}
-              </em>
-            </div>
-            <div
-              className={`runway-lane${decision.runway.ifSkip.covers ? ' ok' : ' alert'}${inputs.skipDay ? ' active-lane' : ''}`}
-            >
-              <span className="lane-label">Skip {skipLabel.slice(0, 3)}</span>
-              <strong>
-                {money(decision.runway.ifSkip.earned)} /{' '}
-                {money(decision.runway.ifSkip.mustPays)}
-              </strong>
-              <em>
-                Lose {money(decision.skipDayEarnings)} ·{' '}
-                {decision.runway.ifSkip.covers
-                  ? 'ok'
-                  : `−${money(decision.runway.ifSkip.gap)}`}
-              </em>
-            </div>
-          </div>
-
-          <div className="coach-paths">
-            {decision.coachPaths.map((p) => (
-              <div
-                key={p.id}
-                className={`coach-path${p.recommended ? ' recommended' : ''}`}
+          <details
+            className="draw-settings"
+            open={showDrawSettings}
+            onToggle={(e) =>
+              setShowDrawSettings((e.target as HTMLDetailsElement).open)
+            }
+          >
+            <summary>Draw settings (fee · cap · gift path)</summary>
+            <div className="row-meta ewa">
+              <label>
+                Bank fee $
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={inputs.ewa.bankFee}
+                  onChange={(e) =>
+                    patchEwa('bankFee', Number(e.target.value) || 0)
+                  }
+                />
+              </label>
+              <label>
+                Daily cap $
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
+                  value={inputs.ewa.dailyCap}
+                  onChange={(e) =>
+                    patchEwa('dailyCap', Number(e.target.value) || 0)
+                  }
+                />
+              </label>
+              <label>
+                Max % earned
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={Math.round(inputs.ewa.maxFraction * 100)}
+                  onChange={(e) =>
+                    patchEwa(
+                      'maxFraction',
+                      Math.min(
+                        1,
+                        Math.max(0, (Number(e.target.value) || 0) / 100),
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Gift fee $
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={inputs.ewa.giftCardFee}
+                  onChange={(e) =>
+                    patchEwa('giftCardFee', Number(e.target.value) || 0)
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-ghost btn-inline"
+                onClick={preloadTts}
               >
-                <div className="coach-top">
-                  <span>{p.label}</span>
-                  {p.recommended ? (
-                    <span className="rec-badge">Best</span>
-                  ) : null}
-                </div>
-                <strong>
-                  {p.id === 'wait'
-                    ? 'No draw'
-                    : `${money(p.draw)}${p.fee > 0 ? ` · −${money(p.fee)}` : ''}`}
-                </strong>
-                <em className="why">{p.why}</em>
-                <span className="cushion">After {money(p.cushion)}</span>
-              </div>
-            ))}
-          </div>
-
-          <p className="placeholder-line">
-            Payroll sync + execute draw = placeholders · coach math is live
-          </p>
+                Preload voice
+              </button>
+            </div>
+          </details>
         </section>
       </div>
 
       <p className="footer-note">
-        Built with Cursor · Kokoro-82M TTS · Web Speech STT · Not affiliated
-        with ZayZoon
-        {!transcript && !voiceNote ? ` · TTS: ${ttsStatus}` : ''}
-        {ttsDetail && !transcript ? ` — ${ttsDetail}` : ''}
+        Built with Cursor · On-device voice · Not affiliated with ZayZoon
+        {!transcript && !voiceNote ? ` · ${ttsDetail}` : ''}
       </p>
     </div>
   )

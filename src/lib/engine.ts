@@ -385,6 +385,7 @@ export function decide(inputs: Inputs): Decision {
     recommendedDraw = 0
     payoutPath = 'none'
     fee = 0
+    for (const p of coach.paths) p.recommended = p.id === 'wait'
   } else if (kind === 'gift_card') {
     title = 'Gift-card path beats the bank fee'
     summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw $${recommendedDraw.toFixed(0)} via gift card (fee $${fee}) instead of paying $${inputs.ewa.bankFee} to the bank.`
@@ -394,9 +395,9 @@ export function decide(inputs: Inputs): Decision {
     summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw up to $${recommendedDraw.toFixed(0)} (fee $${fee}); cushion after ≈ $${remainingAfterDraw.toFixed(0)}.`
     speakText = `Cautious draw of ${recommendedDraw.toFixed(0)} dollars to your bank. Fee ${fee} dollars. Do not draw again this period if you can help it.`
   } else {
-    title = 'Wait — float holds'
-    summary = `Earned $${runwayBase.toFixed(0)} covers $${mustPays.toFixed(0)} (rent+transit $${rentTransit.toFixed(0)}). Safe tonight ≈ $${safeTonight.toFixed(0)}. EWA available $${available.toFixed(0)} if something breaks.`
-    speakText = `Your float holds. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access.`
+    title = 'Must-pays on track'
+    summary = `Nothing needs fixing right now. Earned $${runwayBase.toFixed(0)} covers $${mustPays.toFixed(0)} (rent+transit $${rentTransit.toFixed(0)}). Safe tonight ≈ $${safeTonight.toFixed(0)}. Flip the skip lever to pressure-test a day off.`
+    speakText = `Your float holds. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access. Try the skip lever if you want a day off.`
   }
 
   return {
@@ -449,7 +450,8 @@ export function demoSeed(): Inputs {
   return {
     hourlyRate: 18,
     shifts,
-    skipDay: 'thu',
+    // Calm entry: float holds; what-if lever flips Thursday on.
+    skipDay: null,
     previewSkipDay: 'thu',
     bills: [
       { id: 'rent', name: 'Rent (portion due)', amount: 650, dueInDays: 3 },
