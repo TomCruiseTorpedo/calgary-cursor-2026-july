@@ -160,26 +160,57 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="brand-bar">
-        <h1 className="brand">ShiftFloat</h1>
-        <span className="tag">Daily earner · not a ledger</span>
+      <header className="top">
+        <div className="brand-block">
+          <h1 className="brand">ShiftFloat</h1>
+          <span className="tag">Daily earner · not a ledger</span>
+        </div>
+        <div className="hero-block">
+          <p className="hero-line">
+            If I skip {skipLabel} — do I still cover rent?
+          </p>
+          <p className="sub">
+            Rent runway + safe-to-draw coach (wait · bank · gift-card). Voice
+            on-device.
+          </p>
+        </div>
+        <div className="top-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setInputs(demoSeed())}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className={`btn btn-voice${listening ? ' listening' : ''}`}
+            onClick={startListen}
+          >
+            {listening ? 'Listening…' : 'Speak to adjust'}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={onSpeak}>
+            Speak decision
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={preloadTts}>
+            Preload
+          </button>
+        </div>
       </header>
 
-      <p className="hero-line">
-        If I skip {skipLabel} — do I still cover rent?
-      </p>
-      <p className="sub">
-        Two jobs, one card: <strong>rent runway</strong> under a skip-day, then a{' '}
-        <strong>safe-to-draw coach</strong> (wait · bank · gift-card) using your
-        EWA fee and cap — spoken on-device.
-      </p>
+      {(transcript || voiceNote) && (
+        <p className="voice-line">
+          {transcript}
+          {voiceNote ? ` · ${voiceNote}` : ''}
+          {` · TTS: ${ttsStatus}`}
+        </p>
+      )}
 
       <div className="layout">
-        <section className="panel">
-          <h2>1 · This week’s shifts</h2>
-          <div className="field-row">
+        <section className="panel inputs">
+          <div className="row-meta">
             <label>
-              Hourly rate (CAD)
+              Rate $/hr
               <input
                 type="number"
                 min={0}
@@ -194,7 +225,7 @@ export default function App() {
               />
             </label>
             <label>
-              Days until payday
+              Days to payday
               <input
                 type="number"
                 min={0}
@@ -208,96 +239,8 @@ export default function App() {
                 }
               />
             </label>
-          </div>
-
-          <div className="shifts">
-            {WEEKDAYS.map((d) => (
-              <div
-                key={d.id}
-                className={`shift-row${inputs.skipDay === d.id ? ' skipped' : ''}`}
-              >
-                <span className="day">{d.short}</span>
-                <label>
-                  Hours
-                  <input
-                    type="number"
-                    min={0}
-                    max={24}
-                    step={0.5}
-                    value={inputs.shifts[d.id].hours}
-                    onChange={(e) =>
-                      updateShift(d.id, 'hours', Number(e.target.value) || 0)
-                    }
-                  />
-                </label>
-                <label>
-                  Tips
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={inputs.shifts[d.id].tips}
-                    onChange={(e) =>
-                      updateShift(d.id, 'tips', Number(e.target.value) || 0)
-                    }
-                  />
-                </label>
-                <button
-                  type="button"
-                  className={`skip-btn${inputs.skipDay === d.id ? ' active' : ''}`}
-                  onClick={() => toggleSkip(d.id)}
-                >
-                  {inputs.skipDay === d.id ? 'Skipping' : 'Skip?'}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <h2>2 · Must-pays before payday</h2>
-          <div className="bills">
-            {inputs.bills.map((b) => (
-              <div key={b.id} className="bill-row">
-                <label>
-                  Bill
-                  <input
-                    type="text"
-                    value={b.name}
-                    onChange={(e) => updateBill(b.id, { name: e.target.value })}
-                    className="text-input"
-                  />
-                </label>
-                <label>
-                  Amount
-                  <input
-                    type="number"
-                    min={0}
-                    value={b.amount}
-                    onChange={(e) =>
-                      updateBill(b.id, { amount: Number(e.target.value) || 0 })
-                    }
-                  />
-                </label>
-                <label>
-                  Due in days
-                  <input
-                    type="number"
-                    min={0}
-                    value={b.dueInDays}
-                    onChange={(e) =>
-                      updateBill(b.id, {
-                        dueInDays: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            ))}
-          </div>
-
-          <h2>3 · EWA rails (fee / cap)</h2>
-          <div className="field-row three">
             <label>
-              Bank fee ($)
+              Bank fee
               <input
                 type="number"
                 min={0}
@@ -309,7 +252,7 @@ export default function App() {
               />
             </label>
             <label>
-              Daily cap ($)
+              Daily cap
               <input
                 type="number"
                 min={0}
@@ -321,7 +264,7 @@ export default function App() {
               />
             </label>
             <label>
-              Max % of earned
+              Max %
               <input
                 type="number"
                 min={1}
@@ -331,15 +274,16 @@ export default function App() {
                 onChange={(e) =>
                   patchEwa(
                     'maxFraction',
-                    Math.min(1, Math.max(0, (Number(e.target.value) || 0) / 100)),
+                    Math.min(
+                      1,
+                      Math.max(0, (Number(e.target.value) || 0) / 100),
+                    ),
                   )
                 }
               />
             </label>
-          </div>
-          <div className="field-row">
             <label>
-              Gift-card fee ($)
+              Gift fee
               <input
                 type="number"
                 min={0}
@@ -351,7 +295,7 @@ export default function App() {
               />
             </label>
             <label>
-              Already drawn ($)
+              Drawn
               <input
                 type="number"
                 min={0}
@@ -367,139 +311,170 @@ export default function App() {
             </label>
           </div>
 
-          <div className="actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setInputs(demoSeed())}
-            >
-              Reset demo week
-            </button>
-            <button
-              type="button"
-              className={`btn btn-voice${listening ? ' listening' : ''}`}
-              onClick={startListen}
-            >
-              {listening ? 'Listening…' : 'Speak to adjust'}
-            </button>
+          <div className="section-label">Shifts · hrs / tips · skip</div>
+          <div className="shifts-week">
+            {WEEKDAYS.map((d) => (
+              <div
+                key={d.id}
+                className={`shift-day${inputs.skipDay === d.id ? ' skipped' : ''}`}
+              >
+                <span className="day">{d.short}</span>
+                <input
+                  type="number"
+                  aria-label={`${d.short} hours`}
+                  min={0}
+                  max={24}
+                  step={0.5}
+                  value={inputs.shifts[d.id].hours}
+                  onChange={(e) =>
+                    updateShift(d.id, 'hours', Number(e.target.value) || 0)
+                  }
+                />
+                <input
+                  type="number"
+                  aria-label={`${d.short} tips`}
+                  min={0}
+                  step={1}
+                  value={inputs.shifts[d.id].tips}
+                  onChange={(e) =>
+                    updateShift(d.id, 'tips', Number(e.target.value) || 0)
+                  }
+                />
+                <button
+                  type="button"
+                  className={`skip-btn${inputs.skipDay === d.id ? ' active' : ''}`}
+                  onClick={() => toggleSkip(d.id)}
+                >
+                  {inputs.skipDay === d.id ? 'Skip' : '·'}
+                </button>
+              </div>
+            ))}
           </div>
-          {transcript ? <div className="transcript">{transcript}</div> : null}
-          {voiceNote ? (
-            <p className="voice-status">Parsed: {voiceNote}</p>
-          ) : null}
+
+          <div className="section-label">Must-pays · amount · due (days)</div>
+          <div className="bills-grid">
+            {inputs.bills.map((b) => (
+              <div key={b.id} className="bill-chip">
+                <input
+                  type="text"
+                  value={b.name}
+                  onChange={(e) => updateBill(b.id, { name: e.target.value })}
+                  className="text-input"
+                  aria-label="Bill name"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  value={b.amount}
+                  onChange={(e) =>
+                    updateBill(b.id, { amount: Number(e.target.value) || 0 })
+                  }
+                  aria-label="Amount"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  value={b.dueInDays}
+                  onChange={(e) =>
+                    updateBill(b.id, {
+                      dueInDays: Number(e.target.value) || 0,
+                    })
+                  }
+                  aria-label="Due in days"
+                />
+              </div>
+            ))}
+          </div>
         </section>
 
         <section
           className={`panel decision ${decision.kind}${brokenSkip ? ' broken' : ''}`}
         >
-          <p className="decision-kicker">Decision card</p>
-          <h2>{decision.title}</h2>
-          <p>{decision.summary}</p>
+          <div className="decision-head">
+            <div>
+              <p className="decision-kicker">Decision</p>
+              <h2>{decision.title}</h2>
+            </div>
+            <div className="metrics inline">
+              <div className="metric">
+                <span>Safe tonight</span>
+                <strong>{money(decision.safeToSpendTonight)}</strong>
+              </div>
+              <div className="metric">
+                <span>EWA avail</span>
+                <strong>{money(decision.ewaAvailable)}</strong>
+              </div>
+            </div>
+          </div>
+          <p className="summary">{decision.summary}</p>
 
-          <h3 className="subhead">Rent runway — work vs skip {skipLabel}</h3>
           <div className="runway-compare">
             <div
               className={`runway-lane${decision.runway.workAll.covers ? ' ok' : ' alert'}${!inputs.skipDay ? ' active-lane' : ''}`}
             >
-              <span className="lane-label">{decision.runway.workAll.label}</span>
+              <span className="lane-label">Work all</span>
               <strong>
                 {money(decision.runway.workAll.earned)} /{' '}
                 {money(decision.runway.workAll.mustPays)}
               </strong>
               <em>
-                Rent+transit {money(decision.rentTransit)} ·{' '}
+                R+T {money(decision.rentTransit)} ·{' '}
                 {decision.runway.workAll.covers
                   ? 'covers'
-                  : `short ${money(decision.runway.workAll.gap)}`}
+                  : `−${money(decision.runway.workAll.gap)}`}
               </em>
             </div>
             <div
               className={`runway-lane${decision.runway.ifSkip.covers ? ' ok' : ' alert'}${inputs.skipDay ? ' active-lane' : ''}`}
             >
-              <span className="lane-label">{decision.runway.ifSkip.label}</span>
+              <span className="lane-label">Skip {skipLabel.slice(0, 3)}</span>
               <strong>
                 {money(decision.runway.ifSkip.earned)} /{' '}
                 {money(decision.runway.ifSkip.mustPays)}
               </strong>
               <em>
-                Lose {money(decision.skipDayEarnings)} that day ·{' '}
+                Lose {money(decision.skipDayEarnings)} ·{' '}
                 {decision.runway.ifSkip.covers
-                  ? 'still covers'
-                  : `short ${money(decision.runway.ifSkip.gap)}`}
+                  ? 'ok'
+                  : `−${money(decision.runway.ifSkip.gap)}`}
               </em>
             </div>
           </div>
 
-          <h3 className="subhead">Safe-to-draw coach</h3>
           <div className="coach-paths">
             {decision.coachPaths.map((p) => (
               <div
                 key={p.id}
-                className={`coach-path${p.recommended ? ' recommended' : ''}${p.draw === 0 && p.id !== 'wait' && decision.kind === 'wait' ? ' muted' : ''}`}
+                className={`coach-path${p.recommended ? ' recommended' : ''}`}
               >
                 <div className="coach-top">
                   <span>{p.label}</span>
                   {p.recommended ? (
-                    <span className="rec-badge">Recommended</span>
+                    <span className="rec-badge">Best</span>
                   ) : null}
                 </div>
                 <strong>
                   {p.id === 'wait'
                     ? 'No draw'
-                    : `${money(p.draw)}${p.fee > 0 ? ` · fee ${money(p.fee)}` : ' · no fee'}`}
+                    : `${money(p.draw)}${p.fee > 0 ? ` · −${money(p.fee)}` : ''}`}
                 </strong>
-                <em>{p.why}</em>
-                <span className="cushion">
-                  Cushion after: {money(p.cushion)}
-                </span>
+                <em className="why">{p.why}</em>
+                <span className="cushion">After {money(p.cushion)}</span>
               </div>
             ))}
           </div>
 
-          <div className="metrics">
-            <div className="metric">
-              <span>Safe tonight</span>
-              <strong>{money(decision.safeToSpendTonight)}</strong>
-            </div>
-            <div className="metric">
-              <span>EWA available</span>
-              <strong>{money(decision.ewaAvailable)}</strong>
-            </div>
-          </div>
-
-          <div className="actions">
-            <button type="button" className="btn btn-primary" onClick={onSpeak}>
-              Speak decision
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={preloadTts}>
-              Preload Kokoro
-            </button>
-          </div>
-          <p className="voice-status">
-            TTS: {ttsStatus}
-            {ttsDetail ? ` — ${ttsDetail}` : ''}
+          <p className="placeholder-line">
+            Payroll sync + execute draw = placeholders · coach math is live
           </p>
-
-          <div className="placeholder">
-            <h3>Payroll sync (placeholder)</h3>
-            <p>
-              Shape only — real ZayZoon / ADP hours would land here. Demo uses
-              manual + voice-entered shifts.
-            </p>
-          </div>
-          <div className="placeholder">
-            <h3>Instant draw execute (placeholder)</h3>
-            <p>
-              Coach math is live; moving money stays mocked. Caps mirror typical
-              EWA rails (editable above).
-            </p>
-          </div>
         </section>
       </div>
 
       <p className="footer-note">
-        Built with Cursor · On-device TTS via Kokoro-82M (kokoro-js) · STT via
-        Web Speech API · English only · Not affiliated with ZayZoon
+        Built with Cursor · Kokoro-82M TTS · Web Speech STT · Not affiliated
+        with ZayZoon
+        {!transcript && !voiceNote ? ` · TTS: ${ttsStatus}` : ''}
+        {ttsDetail && !transcript ? ` — ${ttsDetail}` : ''}
       </p>
     </div>
   )
