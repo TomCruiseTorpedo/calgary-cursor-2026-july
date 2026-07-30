@@ -42,7 +42,7 @@ export type EwaDefaults = {
   bankFee: number
   /** Gift-card path fee (often $0). */
   giftCardFee: number
-  /** Soft bonus framing for gift cards (demo placeholder). */
+  /** Soft bonus framing for gift cards (demo). */
   giftCardBonusPct: number
 }
 
@@ -55,6 +55,28 @@ export const DEFAULT_EWA: EwaDefaults = {
 }
 
 export type DecisionKind = 'wait' | 'cautious_draw' | 'gift_card'
+
+export type CoachPath = {
+  id: 'wait' | 'bank' | 'gift_card'
+  label: string
+  draw: number
+  fee: number
+  net: number
+  /** Runway + net draw − must-pays after this path. */
+  cushion: number
+  recommended: boolean
+  why: string
+}
+
+export type RunwayLane = {
+  label: string
+  earned: number
+  covers: boolean
+  gap: number
+  rentTransit: number
+  otherMustPays: number
+  mustPays: number
+}
 
 export type Decision = {
   kind: DecisionKind
@@ -72,20 +94,27 @@ export type Decision = {
   earnedIfSkip: number
   skipDayEarnings: number
   mustPays: number
+  rentTransit: number
   ewaAvailable: number
   safeToSpendTonight: number
+  /** Always two lanes: work-all vs skip (active or preview day). */
+  runway: { workAll: RunwayLane; ifSkip: RunwayLane; skipDay: Weekday }
+  /** Always three paths scored; one marked recommended. */
+  coachPaths: CoachPath[]
 }
 
 export type Inputs = {
   hourlyRate: number
   shifts: Record<Weekday, ShiftDay>
   skipDay: Weekday | null
+  /** Day used for "what if I skip?" when skip toggle is off (default Thu). */
+  previewSkipDay: Weekday
   bills: Bill[]
-  /** Days until payday (end of demo week). */
   daysUntilPayday: number
   ewa: EwaDefaults
-  /** Already drawn this pay period (mock). */
   alreadyDrawn: number
+  /** Mid-week fraction of planned runway treated as already earned for EWA. */
+  earnedToDateFraction: number
 }
 
 export function dayEarnings(rate: number, day: ShiftDay): number {
@@ -110,13 +139,30 @@ export function weekEarnings(
 export function mustPaysBeforePayday(
   bills: Bill[],
   daysUntilPayday: number,
-): { total: number; items: Bill[] } {
+): { total: number; items: Bill[]; rentTransit: number; other: number } {
   const items = bills.filter(
     (b) => b.amount > 0 && b.dueInDays <= daysUntilPayday,
   )
+  let rentTransit = 0
+  let other = 0
+  for (const b of items) {
+    const name = b.name.toLowerCase()
+    if (
+      name.includes('rent') ||
+      name.includes('transit') ||
+      name.includes('gas') ||
+      name.includes('bus')
+    ) {
+      rentTransit += b.amount
+    } else {
+      other += b.amount
+    }
+  }
   return {
     total: items.reduce((s, b) => s + b.amount, 0),
     items,
+    rentTransit,
+    other,
   }
 }
 
@@ -129,69 +175,184 @@ export function ewaAvailable(
   return Math.max(0, Math.min(ewa.dailyCap, byFraction))
 }
 
+function lane(
+  label: string,
+  earned: number,
+  mustPays: number,
+  rentTransit: number,
+  other: number,
+): RunwayLane {
+  const gap = Math.max(0, mustPays - earned)
+  return {
+    label,
+    earned,
+    covers: earned + 0.009 >= mustPays,
+    gap,
+    rentTransit,
+    otherMustPays: other,
+    mustPays,
+  }
+}
+
+function buildCoachPaths(
+  runwayBase: number,
+  mustPays: number,
+  available: number,
+  ewa: EwaDefaults,
+  covers: boolean,
+  gap: number,
+  bufferTarget: number,
+): { paths: CoachPath[]; kind: DecisionKind; draw: number; fee: number; path: Decision['payoutPath'] } {
+  const need = !covers
+    ? Math.min(available, Math.ceil(gap + bufferTarget))
+    : 0
+
+  const waitCushion = runwayBase - mustPays
+  const bankDraw = need
+  const bankFee = need > 0 ? ewa.bankFee : 0
+  const bankNet = Math.max(0, bankDraw - bankFee)
+  const giftDraw = need
+  const giftFee = need > 0 ? ewa.giftCardFee : 0
+  const giftNet = Math.max(0, giftDraw - giftFee)
+  const giftBonus = giftDraw * ewa.giftCardBonusPct
+
+  const wait: CoachPath = {
+    id: 'wait',
+    label: 'Wait',
+    draw: 0,
+    fee: 0,
+    net: 0,
+    cushion: waitCushion,
+    recommended: false,
+    why: covers
+      ? 'Float covers must-pays — keep EWA dry.'
+      : `Short $${gap.toFixed(0)} with no draw — only if you can move a bill or work the skip day.`,
+  }
+
+  const bank: CoachPath = {
+    id: 'bank',
+    label: 'Bank transfer',
+    draw: bankDraw,
+    fee: bankFee,
+    net: bankNet,
+    cushion: runwayBase + bankNet - mustPays,
+    recommended: false,
+    why:
+      need > 0
+        ? `Instant cash to bank; flat fee $${ewa.bankFee}. Cap $${ewa.dailyCap}/day · ${Math.round(ewa.maxFraction * 100)}% of earned.`
+        : 'No draw needed.',
+  }
+
+  const gift: CoachPath = {
+    id: 'gift_card',
+    label: 'Gift-card path',
+    draw: giftDraw,
+    fee: giftFee,
+    net: giftNet,
+    cushion: runwayBase + giftNet - mustPays,
+    recommended: false,
+    why:
+      need > 0
+        ? `Avoid $${ewa.bankFee} bank fee${ewa.giftCardBonusPct > 0 ? ` · ~${Math.round(ewa.giftCardBonusPct * 100)}% bonus at retailers` : ''}. Best when the fee eats the draw.`
+        : 'No draw needed.',
+  }
+
+  let kind: DecisionKind = 'wait'
+  let draw = 0
+  let fee = 0
+  let path: Decision['payoutPath'] = 'none'
+
+  if (covers && waitCushion >= bufferTarget) {
+    wait.recommended = true
+    kind = 'wait'
+  } else if (!covers && available >= 20 && need > 0) {
+    // Prefer gift card when bank fee is a meaningful bite of the need.
+    const feeHurts = ewa.bankFee >= 3 && ewa.bankFee / need >= 0.03
+    const smallNeed = need <= 100
+    if (feeHurts || smallNeed) {
+      gift.recommended = true
+      kind = 'gift_card'
+      draw = giftDraw
+      fee = giftFee
+      path = 'gift_card'
+      gift.why += ` Recommended: save $${ewa.bankFee} vs bank${giftBonus > 0 ? ` (+~$${giftBonus.toFixed(0)} bonus)` : ''}.`
+    } else {
+      bank.recommended = true
+      kind = 'cautious_draw'
+      draw = bankDraw
+      fee = bankFee
+      path = 'bank'
+      bank.why += ' Recommended: need is large enough that fee is small relative to cash.'
+    }
+  } else if (covers) {
+    wait.recommended = true
+    kind = 'wait'
+  } else {
+    wait.recommended = true
+    kind = 'wait'
+    wait.why = `EWA available only $${available.toFixed(0)} — not enough to close a $${gap.toFixed(0)} gap. Work the day or move a bill.`
+  }
+
+  return { paths: [wait, bank, gift], kind, draw, fee, path }
+}
+
 /**
  * Core decision: rent runway under a skip-day, then safe-to-draw path.
  * Grounded only in the numbers the worker entered — no hallucinated income.
  */
 export function decide(inputs: Inputs): Decision {
+  const skipForCompare = inputs.skipDay ?? inputs.previewSkipDay
+  const skipLabel =
+    WEEKDAYS.find((d) => d.id === skipForCompare)?.label ?? 'that day'
+
   const { total, ifSkip, skipAmount } = weekEarnings(
     inputs.hourlyRate,
     inputs.shifts,
-    inputs.skipDay,
+    skipForCompare,
   )
-  const runwayBase = inputs.skipDay ? ifSkip : total
-  const { total: mustPays } = mustPaysBeforePayday(
+  const { total: mustPays, rentTransit, other } = mustPaysBeforePayday(
     inputs.bills,
     inputs.daysUntilPayday,
   )
-  const gap = Math.max(0, mustPays - runwayBase)
-  const covers = runwayBase + 0.009 >= mustPays
 
-  // Treat "earned to date" for EWA as ~60% of planned week (mid-week demo seed).
-  const earnedToDate = runwayBase * 0.6
+  const workAll = lane('Work every shift', total, mustPays, rentTransit, other)
+  const ifSkipLane = lane(
+    `If you skip ${skipLabel}`,
+    ifSkip,
+    mustPays,
+    rentTransit,
+    other,
+  )
+
+  // Active runway: skipped day counts only when toggle is on.
+  const active = inputs.skipDay ? ifSkipLane : workAll
+  const runwayBase = active.earned
+  const gap = active.gap
+  const covers = active.covers
+
+  const earnedToDate = runwayBase * inputs.earnedToDateFraction
   const available = ewaAvailable(earnedToDate, inputs.alreadyDrawn, inputs.ewa)
   const bufferTarget = Math.max(25, mustPays * 0.05)
   const afterMust = runwayBase - mustPays
   const safeTonight = Math.max(0, afterMust - bufferTarget)
 
-  let kind: DecisionKind
-  let recommendedDraw = 0
-  let payoutPath: Decision['payoutPath'] = 'none'
-  let fee = 0
+  const coach = buildCoachPaths(
+    runwayBase,
+    mustPays,
+    available,
+    inputs.ewa,
+    covers,
+    gap,
+    bufferTarget,
+  )
 
-  if (covers && safeTonight >= 25) {
-    kind = 'wait'
-    recommendedDraw = 0
-  } else if (!covers && available >= 20) {
-    // Need cash before payday — prefer gift card when fee would hurt the gap.
-    const need = Math.min(available, Math.ceil(gap + bufferTarget))
-    if (inputs.ewa.bankFee >= 4 && need <= 80) {
-      kind = 'gift_card'
-      recommendedDraw = need
-      payoutPath = 'gift_card'
-      fee = inputs.ewa.giftCardFee
-    } else {
-      kind = 'cautious_draw'
-      recommendedDraw = need
-      payoutPath = 'bank'
-      fee = inputs.ewa.bankFee
-    }
-  } else if (covers && safeTonight < 25 && available >= 20) {
-    // Tight but covering — small cautious draw or wait.
-    kind = 'wait'
-    recommendedDraw = 0
-  } else {
-    kind = 'wait'
-    recommendedDraw = 0
-  }
+  let kind = coach.kind
+  let recommendedDraw = coach.draw
+  let payoutPath = coach.path
+  let fee = coach.fee
 
-  // If skip breaks runway and draw still can't close gap → wait + escalate message.
   const netAfterFee = Math.max(0, recommendedDraw - fee)
   const remainingAfterDraw = runwayBase + netAfterFee - mustPays
-
-  const skipLabel = inputs.skipDay
-    ? WEEKDAYS.find((d) => d.id === inputs.skipDay)?.label ?? 'that day'
-    : null
 
   let title: string
   let summary: string
@@ -199,34 +360,43 @@ export function decide(inputs: Inputs): Decision {
 
   if (inputs.skipDay && !covers) {
     title = `Skipping ${skipLabel} breaks the runway`
-    summary = `Without ${skipLabel}'s $${skipAmount.toFixed(0)}, you have $${ifSkip.toFixed(0)} against $${mustPays.toFixed(0)} in must-pays before payday — short $${gap.toFixed(0)}.`
+    summary = `Without ${skipLabel}'s $${skipAmount.toFixed(0)}, you have $${ifSkip.toFixed(0)} against $${mustPays.toFixed(0)} must-pays (rent+transit $${rentTransit.toFixed(0)}). Short $${gap.toFixed(0)}.`
     if (kind === 'cautious_draw' || kind === 'gift_card') {
-      summary += ` A $${recommendedDraw.toFixed(0)} ${payoutPath === 'gift_card' ? 'gift-card' : 'bank'} draw (fee $${fee}) gets you closer — still plan the rest.`
-      speakText = `If you skip ${skipLabel}, you fall short of rent and transit by about ${gap.toFixed(0)} dollars. I recommend a cautious ${recommendedDraw.toFixed(0)} dollar ${payoutPath === 'gift_card' ? 'gift card' : 'bank'} draw. Fee ${fee} dollars. Keep working the other shifts.`
+      summary += ` Coach: ${payoutPath === 'gift_card' ? 'gift-card' : 'bank'} draw $${recommendedDraw.toFixed(0)} (fee $${fee}).`
+      speakText = `If you skip ${skipLabel}, you fall short of rent and transit by about ${gap.toFixed(0)} dollars. I recommend a ${recommendedDraw.toFixed(0)} dollar ${payoutPath === 'gift_card' ? 'gift card' : 'bank'} draw. Fee ${fee} dollars.`
     } else {
-      summary += ` Earned-wage access available tonight: $${available.toFixed(0)} — not enough alone. Work ${skipLabel} or move a bill if you can.`
-      speakText = `If you skip ${skipLabel}, you cannot cover must-pays before payday. You are short about ${gap.toFixed(0)} dollars. Available earned wage access is only ${available.toFixed(0)} dollars. Best move: work ${skipLabel} or move a bill.`
+      summary += ` EWA available $${available.toFixed(0)} — not enough alone. Work ${skipLabel} or move a bill.`
+      speakText = `If you skip ${skipLabel}, you cannot cover must-pays. Short about ${gap.toFixed(0)} dollars. Best move: work ${skipLabel} or move a bill.`
     }
   } else if (inputs.skipDay && covers) {
     title = `You can skip ${skipLabel}`
-    summary = `Even without $${skipAmount.toFixed(0)} from ${skipLabel}, $${ifSkip.toFixed(0)} still covers $${mustPays.toFixed(0)} in must-pays. Safe float tonight ≈ $${safeTonight.toFixed(0)}.`
-    speakText = `Yes — you can skip ${skipLabel} and still cover rent and transit. Safe to spend tonight is about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access unless something unexpected hits.`
+    summary = `Even without $${skipAmount.toFixed(0)} from ${skipLabel}, $${ifSkip.toFixed(0)} covers $${mustPays.toFixed(0)} (rent+transit $${rentTransit.toFixed(0)}). Safe tonight ≈ $${safeTonight.toFixed(0)}.`
+    speakText = `Yes — you can skip ${skipLabel} and still cover rent and transit. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access.`
+    kind = 'wait'
+    recommendedDraw = 0
+    payoutPath = 'none'
+    fee = 0
+    for (const p of coach.paths) p.recommended = p.id === 'wait'
+  } else if (!inputs.skipDay && !ifSkipLane.covers) {
+    title = `Work ${skipLabel} — skip breaks rent runway`
+    summary = `Working all shifts: $${total.toFixed(0)} covers $${mustPays.toFixed(0)}. If you skip ${skipLabel}, you drop to $${ifSkip.toFixed(0)} — short $${ifSkipLane.gap.toFixed(0)} for rent+transit ($${rentTransit.toFixed(0)}) and other must-pays.`
+    speakText = `Keep ${skipLabel} on the schedule. Skipping would leave you short about ${ifSkipLane.gap.toFixed(0)} dollars before payday. Your float holds if you work it.`
     kind = 'wait'
     recommendedDraw = 0
     payoutPath = 'none'
     fee = 0
   } else if (kind === 'gift_card') {
     title = 'Gift-card path beats the bank fee'
-    summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw $${recommendedDraw.toFixed(0)} via gift card (fee $${fee}${inputs.ewa.giftCardBonusPct > 0 ? `, ~${Math.round(inputs.ewa.giftCardBonusPct * 100)}% bonus placeholder` : ''}) instead of paying $${inputs.ewa.bankFee} to the bank.`
-    speakText = `You are short before payday. Take about ${recommendedDraw.toFixed(0)} dollars on the gift card path to avoid the ${inputs.ewa.bankFee} dollar bank fee. Then stop drawing.`
+    summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw $${recommendedDraw.toFixed(0)} via gift card (fee $${fee}) instead of paying $${inputs.ewa.bankFee} to the bank.`
+    speakText = `Take about ${recommendedDraw.toFixed(0)} dollars on the gift card path to avoid the ${inputs.ewa.bankFee} dollar bank fee. Then stop drawing.`
   } else if (kind === 'cautious_draw') {
-    title = 'Cautious draw — then stop'
-    summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw up to $${recommendedDraw.toFixed(0)} (fee $${fee}); leaves ~$${remainingAfterDraw.toFixed(0)} cushion after must-pays.`
-    speakText = `Cautious draw of ${recommendedDraw.toFixed(0)} dollars to your bank. Fee ${fee} dollars. That covers the gap — do not draw again this period if you can help it.`
+    title = 'Cautious bank draw — then stop'
+    summary = `Must-pays $${mustPays.toFixed(0)} vs earned $${runwayBase.toFixed(0)}. Draw up to $${recommendedDraw.toFixed(0)} (fee $${fee}); cushion after ≈ $${remainingAfterDraw.toFixed(0)}.`
+    speakText = `Cautious draw of ${recommendedDraw.toFixed(0)} dollars to your bank. Fee ${fee} dollars. Do not draw again this period if you can help it.`
   } else {
     title = 'Wait — float holds'
-    summary = `Earned $${runwayBase.toFixed(0)} covers $${mustPays.toFixed(0)} must-pays. Safe tonight ≈ $${safeTonight.toFixed(0)}. EWA available $${available.toFixed(0)} if something breaks.`
-    speakText = `Your float holds. You can cover must-pays before payday. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access.`
+    summary = `Earned $${runwayBase.toFixed(0)} covers $${mustPays.toFixed(0)} (rent+transit $${rentTransit.toFixed(0)}). Safe tonight ≈ $${safeTonight.toFixed(0)}. EWA available $${available.toFixed(0)} if something breaks.`
+    speakText = `Your float holds. Safe to spend tonight about ${safeTonight.toFixed(0)} dollars. Wait on earned wage access.`
   }
 
   return {
@@ -245,8 +415,11 @@ export function decide(inputs: Inputs): Decision {
     earnedIfSkip: ifSkip,
     skipDayEarnings: skipAmount,
     mustPays,
+    rentTransit,
     ewaAvailable: available,
     safeToSpendTonight: safeTonight,
+    runway: { workAll, ifSkip: ifSkipLane, skipDay: skipForCompare },
+    coachPaths: coach.paths,
   }
 }
 
@@ -277,6 +450,7 @@ export function demoSeed(): Inputs {
     hourlyRate: 18,
     shifts,
     skipDay: 'thu',
+    previewSkipDay: 'thu',
     bills: [
       { id: 'rent', name: 'Rent (portion due)', amount: 650, dueInDays: 3 },
       { id: 'transit', name: 'Transit / gas', amount: 85, dueInDays: 1 },
@@ -286,5 +460,6 @@ export function demoSeed(): Inputs {
     daysUntilPayday: 4,
     ewa: { ...DEFAULT_EWA },
     alreadyDrawn: 0,
+    earnedToDateFraction: 0.6,
   }
 }

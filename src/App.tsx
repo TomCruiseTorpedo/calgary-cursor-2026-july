@@ -29,12 +29,16 @@ export default function App() {
   const [transcript, setTranscript] = useState('')
   const [voiceNote, setVoiceNote] = useState('')
   const [ttsStatus, setTtsStatus] = useState<TtsStatus>('idle')
-  const [ttsDetail, setTtsDetail] = useState('Voice idle — Speak loads Kokoro on first use')
+  const [ttsDetail, setTtsDetail] = useState(
+    'Voice idle — Speak loads Kokoro on first use',
+  )
   const recRef = useRef<SpeechRecognition | null>(null)
 
   const decision = useMemo(() => decide(inputs), [inputs])
   const brokenSkip =
     Boolean(inputs.skipDay) && !decision.runwayCoversMustPays
+  const skipLabel =
+    WEEKDAYS.find((d) => d.id === decision.runway.skipDay)?.label ?? 'day'
 
   function updateShift(day: Weekday, field: 'hours' | 'tips', value: number) {
     setInputs((prev) => ({
@@ -57,6 +61,14 @@ export default function App() {
     setInputs((prev) => ({
       ...prev,
       skipDay: prev.skipDay === day ? null : day,
+      previewSkipDay: day,
+    }))
+  }
+
+  function patchEwa(field: keyof Inputs['ewa'], value: number) {
+    setInputs((prev) => ({
+      ...prev,
+      ewa: { ...prev.ewa, [field]: value },
     }))
   }
 
@@ -72,7 +84,10 @@ export default function App() {
       }
       if (patch.hourlyRate != null) next.hourlyRate = patch.hourlyRate
       if (patch.clearSkip) next.skipDay = null
-      else if (patch.skipDay) next.skipDay = patch.skipDay
+      else if (patch.skipDay) {
+        next.skipDay = patch.skipDay
+        next.previewSkipDay = patch.skipDay
+      }
       if (patch.hoursForDay) {
         const { day, hours } = patch.hoursForDay
         next.shifts[day] = { ...next.shifts[day], hours }
@@ -82,18 +97,20 @@ export default function App() {
         next.shifts[day] = { ...next.shifts[day], tips }
       }
       if (patch.billAmount) {
-        const idx = next.bills.findIndex(
-          (b) =>
-            b.name.toLowerCase().includes('rent') &&
-            patch.billAmount!.name.toLowerCase().includes('rent'),
-        )
         const byName = next.bills.findIndex(
           (b) => b.name === patch.billAmount!.name,
         )
-        const target = byName >= 0 ? byName : idx
-        if (target >= 0) {
-          next.bills[target] = {
-            ...next.bills[target],
+        const idx =
+          byName >= 0
+            ? byName
+            : next.bills.findIndex(
+                (b) =>
+                  b.name.toLowerCase().includes('rent') &&
+                  patch.billAmount!.name.toLowerCase().includes('rent'),
+              )
+        if (idx >= 0) {
+          next.bills[idx] = {
+            ...next.bills[idx],
             amount: patch.billAmount.amount,
           }
         }
@@ -105,7 +122,9 @@ export default function App() {
   function startListen() {
     const rec = getSpeechRecognition()
     if (!rec) {
-      setTranscript('Speech recognition not available in this browser — type fields instead.')
+      setTranscript(
+        'Speech recognition not available in this browser — type fields instead.',
+      )
       return
     }
     recRef.current = rec
@@ -139,13 +158,6 @@ export default function App() {
     })
   }
 
-  const pathLabel =
-    decision.payoutPath === 'gift_card'
-      ? 'Gift-card path'
-      : decision.payoutPath === 'bank'
-        ? 'Bank transfer'
-        : 'No draw'
-
   return (
     <div className="app">
       <header className="brand-bar">
@@ -154,17 +166,17 @@ export default function App() {
       </header>
 
       <p className="hero-line">
-        If I skip Thursday — do I still cover rent?
+        If I skip {skipLabel} — do I still cover rent?
       </p>
       <p className="sub">
-        Log the week you actually work. Toggle a skip day. Get a runway answer
-        and a safe-to-draw call (wait / cautious bank / gift-card) — grounded in
-        your numbers, spoken aloud on-device.
+        Two jobs, one card: <strong>rent runway</strong> under a skip-day, then a{' '}
+        <strong>safe-to-draw coach</strong> (wait · bank · gift-card) using your
+        EWA fee and cap — spoken on-device.
       </p>
 
       <div className="layout">
         <section className="panel">
-          <h2>This week’s shifts</h2>
+          <h2>1 · This week’s shifts</h2>
           <div className="field-row">
             <label>
               Hourly rate (CAD)
@@ -241,7 +253,7 @@ export default function App() {
             ))}
           </div>
 
-          <h2>Must-pays before payday</h2>
+          <h2>2 · Must-pays before payday</h2>
           <div className="bills">
             {inputs.bills.map((b) => (
               <div key={b.id} className="bill-row">
@@ -251,14 +263,7 @@ export default function App() {
                     type="text"
                     value={b.name}
                     onChange={(e) => updateBill(b.id, { name: e.target.value })}
-                    style={{
-                      background: 'var(--bg0)',
-                      border: '1px solid var(--line)',
-                      borderRadius: 10,
-                      color: 'var(--ink)',
-                      padding: '0.55rem 0.65rem',
-                      fontFamily: 'var(--mono)',
-                    }}
+                    className="text-input"
                   />
                 </label>
                 <label>
@@ -287,6 +292,79 @@ export default function App() {
                 </label>
               </div>
             ))}
+          </div>
+
+          <h2>3 · EWA rails (fee / cap)</h2>
+          <div className="field-row three">
+            <label>
+              Bank fee ($)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={inputs.ewa.bankFee}
+                onChange={(e) =>
+                  patchEwa('bankFee', Number(e.target.value) || 0)
+                }
+              />
+            </label>
+            <label>
+              Daily cap ($)
+              <input
+                type="number"
+                min={0}
+                step={10}
+                value={inputs.ewa.dailyCap}
+                onChange={(e) =>
+                  patchEwa('dailyCap', Number(e.target.value) || 0)
+                }
+              />
+            </label>
+            <label>
+              Max % of earned
+              <input
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={Math.round(inputs.ewa.maxFraction * 100)}
+                onChange={(e) =>
+                  patchEwa(
+                    'maxFraction',
+                    Math.min(1, Math.max(0, (Number(e.target.value) || 0) / 100)),
+                  )
+                }
+              />
+            </label>
+          </div>
+          <div className="field-row">
+            <label>
+              Gift-card fee ($)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={inputs.ewa.giftCardFee}
+                onChange={(e) =>
+                  patchEwa('giftCardFee', Number(e.target.value) || 0)
+                }
+              />
+            </label>
+            <label>
+              Already drawn ($)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={inputs.alreadyDrawn}
+                onChange={(e) =>
+                  setInputs((p) => ({
+                    ...p,
+                    alreadyDrawn: Number(e.target.value) || 0,
+                  }))
+                }
+              />
+            </label>
           </div>
 
           <div className="actions">
@@ -318,40 +396,73 @@ export default function App() {
           <h2>{decision.title}</h2>
           <p>{decision.summary}</p>
 
-          <div className="path-chip">
-            <span>{pathLabel}</span>
-            {decision.recommendedDraw > 0 ? (
+          <h3 className="subhead">Rent runway — work vs skip {skipLabel}</h3>
+          <div className="runway-compare">
+            <div
+              className={`runway-lane${decision.runway.workAll.covers ? ' ok' : ' alert'}${!inputs.skipDay ? ' active-lane' : ''}`}
+            >
+              <span className="lane-label">{decision.runway.workAll.label}</span>
               <strong>
-                {money(decision.recommendedDraw)}
-                {decision.fee > 0 ? ` · fee ${money(decision.fee)}` : ' · no fee'}
+                {money(decision.runway.workAll.earned)} /{' '}
+                {money(decision.runway.workAll.mustPays)}
               </strong>
-            ) : (
-              <strong>Hold EWA</strong>
-            )}
+              <em>
+                Rent+transit {money(decision.rentTransit)} ·{' '}
+                {decision.runway.workAll.covers
+                  ? 'covers'
+                  : `short ${money(decision.runway.workAll.gap)}`}
+              </em>
+            </div>
+            <div
+              className={`runway-lane${decision.runway.ifSkip.covers ? ' ok' : ' alert'}${inputs.skipDay ? ' active-lane' : ''}`}
+            >
+              <span className="lane-label">{decision.runway.ifSkip.label}</span>
+              <strong>
+                {money(decision.runway.ifSkip.earned)} /{' '}
+                {money(decision.runway.ifSkip.mustPays)}
+              </strong>
+              <em>
+                Lose {money(decision.skipDayEarnings)} that day ·{' '}
+                {decision.runway.ifSkip.covers
+                  ? 'still covers'
+                  : `short ${money(decision.runway.ifSkip.gap)}`}
+              </em>
+            </div>
+          </div>
+
+          <h3 className="subhead">Safe-to-draw coach</h3>
+          <div className="coach-paths">
+            {decision.coachPaths.map((p) => (
+              <div
+                key={p.id}
+                className={`coach-path${p.recommended ? ' recommended' : ''}${p.draw === 0 && p.id !== 'wait' && decision.kind === 'wait' ? ' muted' : ''}`}
+              >
+                <div className="coach-top">
+                  <span>{p.label}</span>
+                  {p.recommended ? (
+                    <span className="rec-badge">Recommended</span>
+                  ) : null}
+                </div>
+                <strong>
+                  {p.id === 'wait'
+                    ? 'No draw'
+                    : `${money(p.draw)}${p.fee > 0 ? ` · fee ${money(p.fee)}` : ' · no fee'}`}
+                </strong>
+                <em>{p.why}</em>
+                <span className="cushion">
+                  Cushion after: {money(p.cushion)}
+                </span>
+              </div>
+            ))}
           </div>
 
           <div className="metrics">
-            <div className={`metric ${decision.runwayCoversMustPays ? 'ok' : 'alert'}`}>
-              <span>Runway vs must-pays</span>
-              <strong>
-                {money(inputs.skipDay ? decision.earnedIfSkip : decision.earnedThisWeek)}{' '}
-                / {money(decision.mustPays)}
-              </strong>
-            </div>
-            <div className={`metric ${decision.gapToMustPays > 0 ? 'alert' : 'ok'}`}>
-              <span>Gap if skip</span>
-              <strong>
-                {decision.gapToMustPays > 0
-                  ? money(decision.gapToMustPays)
-                  : 'Covered'}
-              </strong>
-            </div>
             <div className="metric">
               <span>Safe tonight</span>
               <strong>{money(decision.safeToSpendTonight)}</strong>
             </div>
             <div className="metric">
-              <span>EWA available (mock)</span>
+              <span>EWA available</span>
               <strong>{money(decision.ewaAvailable)}</strong>
             </div>
           </div>
@@ -377,10 +488,10 @@ export default function App() {
             </p>
           </div>
           <div className="placeholder">
-            <h3>Instant draw (placeholder)</h3>
+            <h3>Instant draw execute (placeholder)</h3>
             <p>
-              Recommendation is real math; executing a transfer is mocked. Cap
-              50% / $200 day mirrors typical EWA rails.
+              Coach math is live; moving money stays mocked. Caps mirror typical
+              EWA rails (editable above).
             </p>
           </div>
         </section>

@@ -2,7 +2,7 @@
 
 Payday is Friday. Rent hits Wednesday. You’re staring at Thursday’s shift wondering if you can take it off for a sick kid — and whether tapping earned wages tonight helps or just burns a fee.
 
-**ShiftFloat** answers that. Not with another money-in / money-out ledger — with a **rent runway** under a skip-day and a **safe-to-draw** call (wait · cautious bank · gift-card path), spoken on-device.
+**ShiftFloat** answers that. Not with another money-in / money-out ledger — with a side-by-side **rent runway** (work every shift vs skip a day) and a **safe-to-draw coach** that scores wait · bank · gift-card against your EWA fee and cap, spoken on-device.
 
 Built with **[Cursor](https://cursor.com)** as the agentic coding harness.
 
@@ -30,18 +30,18 @@ Cursor end-to-end: decision engine, voice I/O, judge-facing README. On-device **
 ## What it does
 
 1. Load the seeded week (hours, tips, must-pays before payday).
-2. Toggle **Skip?** on a day — runway recalculates instantly.
-3. Read the **decision card**: cover / gap, safe tonight, EWA available, recommended path.
+2. Toggle **Skip?** on a day — compare **work-all vs skip** rent runway (rent+transit called out).
+3. Read the **safe-to-draw coach**: three scored paths (wait / bank / gift-card); tweak EWA fee & cap live.
 4. **Speak to adjust** (mic) or edit fields; **Speak decision** plays Kokoro (or browser TTS).
 
 ## Judge checklist
 
 1. Open the app (local or live URL).
-2. Confirm the decision card shows a **broken runway** with Thursday skipped (demo default).
-3. Clear Thursday skip — card should flip toward **Wait — float holds** (or much tighter gap).
-4. Click **Speak decision** — hear the recommendation (first Kokoro load may take a moment).
-5. Optional: **Speak to adjust** — e.g. “skip Friday” or “rent is 650”.
-6. Skim `src/lib/engine.ts` for the mechanism.
+2. Confirm **work vs skip** runway: skip Thursday → short; rent+transit called out.
+3. Confirm **safe-to-draw coach** scores Wait / Bank / Gift-card with one Recommended (gift-card on demo seed).
+4. Clear Thursday skip — card flips to keep-working / float-holds; skip lane still shows the gap.
+5. Tweak **Bank fee** or **Daily cap** — coach paths recalculate.
+6. Click **Speak decision**; skim `src/lib/engine.ts`.
 
 ## Architecture
 
@@ -70,5 +70,6 @@ No API keys. First **Speak decision** may download Kokoro weights from Hugging F
 
 | | |
 |--|--|
-| Skip Thursday → broken runway + cautious draw | ![Skip Thursday breaks runway](docs/screenshots/01-skip-thursday-breaks-runway.png) |
+| Skip Thursday → broken runway + coach | ![Skip Thursday breaks runway](docs/screenshots/01-skip-thursday-breaks-runway.png) |
 | Clear skip → float holds | ![Float holds](docs/screenshots/02-float-holds.png) |
+| Work-vs-skip runway + Wait/Bank/Gift-card coach | ![Runway and coach](docs/screenshots/03-runway-and-coach.png) |
